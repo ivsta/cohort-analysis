@@ -1,0 +1,255 @@
+#data pre-processing 
+
+online.retail <- Online_Retail
+rm(Online_Retail)
+
+DT::datatable(head(online.retail,30),
+              rownames = FALSE,
+              options = list(
+                pageLength = 10,
+                lengthMenu = c(10, 20, 30)),
+              caption = htmltools::tags$caption(
+                style = 'caption-side:bottom; text-align: right;',
+                'Source:', htmltools::em('UCI Machine Learning Repository')))
+
+
+str(online.retail)
+cat("The number of non-duplicate observations within the data set is",
+    nrow(unique(online.retail)), "out of", "\n",
+    nrow(online.retail),
+    "indicating that there are",
+    nrow(online.retail)-nrow(unique(online.retail)),
+    "duplicates within the data set.","\n",
+    "online.retail2 is our new, duplicate observation free data frame.")
+
+
+
+dupes <- which(duplicated(online.retail))
+
+
+online.retail2 <- online.retail[-dupes,]
+
+rm(online.retail,dupes)
+
+cat("There are",
+    nrow(online.retail2[!complete.cases(online.retail2),]),
+    "out of",
+    nrow(online.retail2),
+    "total observations that feature at least one NA value.","\n",
+    "The CustomerId column alone features all of the",
+    nrow(online.retail2[!complete.cases(online.retail2$CustomerID),]),
+    "of the total NA values. These", "\n", "observations will be excluded from the new data frame, online.retail3,
+    giving us a new total of",
+    nrow(online.retail2)-nrow(online.retail2[!complete.cases(online.retail2),]),
+    "observations to work with.")
+
+
+online.retail3 <- online.retail2[complete.cases(online.retail2),]
+
+rm(online.retail2)
+
+online.retail3$InvoiceDate <- as.Date(online.retail3$InvoiceDate, format = "%m/%d/%Y")
+
+
+online.retail3$Year <- as.numeric(format(online.retail3$InvoiceDate, '%Y'))
+
+
+cohorts2011 <- online.retail3[online.retail3$Year==2011,]
+
+
+cohorts2011 <- cohorts2011[,c("CustomerID","InvoiceDate","Year")]
+
+str(cohorts2011)
+
+
+
+order.frequency <- as.data.frame(table(cohorts2011$CustomerID))
+colnames(order.frequency)[1] <- "Cust.Id" #FREQ NOT NEEDED?
+
+join.date <- aggregate(InvoiceDate~CustomerID,cohorts2011,min, na.rm = TRUE)
+
+colnames(join.date)[2] <- "Join_Date"
+
+cohorts2011 <- merge(cohorts2011, join.date, by.x = "CustomerID",by.y = "CustomerID", all.x = TRUE)
+
+
+cohorts2011 <- merge(cohorts2011, order.frequency, by.x = "CustomerID",by.y = "Cust.Id", all.x = TRUE) 
+
+cohorts2011$Cohort <- as.numeric(format(cohorts2011$Join_Date, "%m"))
+
+rm(join.date)
+
+DT::datatable(head(cohorts2011,500),
+              filter = 'top',
+              rownames = FALSE,
+              options = list(
+                pageLength = 10,
+                pageLength = c(10,20,30,40,50)))
+
+
+cohorts2011$Age_by_Day <- as.numeric(difftime(cohorts2011$InvoiceDate,cohorts2011$Join_Date,units = c("days")))
+
+cohorts2011$Age_by_Month <- floor(cohorts2011$Age_by_Day/30)
+
+cohorts2011$Join_Date <- format(cohorts2011$Join_Date, "%Y-%m")
+cohorts2011$InvoiceDate <- format(cohorts2011$InvoiceDate, "%Y-%m")
+
+groups <- c("Jan Cohorts",
+            "Feb Cohorts",
+            "Mar Cohorts",
+            "Apr Cohorts",
+            "May Cohorts",
+            "Jun Cohorts",
+            "Jul Cohorts",
+            "Aug Cohorts",
+            "Sep Cohorts",
+            "Oct Cohorts",
+            "Nov Cohorts",
+            "Dec Cohorts")
+
+for(i in 1:12){
+  cohorts2011[cohorts2011$Cohort==i,"Cohort"] <- groups[i]
+}
+rm(i,groups)
+
+cohorts2011$Cohort <- factor(cohorts2011$Cohort,ordered = T,levels =c("Jan Cohorts",
+                                                                      "Feb Cohorts",
+                                                                      "Mar Cohorts",
+                                                                      "Apr Cohorts",
+                                                                      "May Cohorts",
+                                                                      "Jun Cohorts",
+                                                                      "Jul Cohorts",
+                                                                      "Aug Cohorts",
+                                                                      "Sep Cohorts",
+                                                                      "Oct Cohorts",
+                                                                      "Nov Cohorts",
+                                                                      "Dec Cohorts"))
+
+
+
+DT::datatable(head(cohorts2011,500),
+              filter = 'top',
+              rownames = FALSE,
+              options = list(
+                pageLength = 10,
+                pageLength = c(10,20,30,40,50)))
+
+
+MAU Mixpanel
+
+dupes <- which(duplicated(cohorts2011[,c(-5,-6)]))
+
+
+cohorts2011 <- cohorts2011[-dupes,]
+
+rm(dupes)
+
+cohorts.wide <- reshape2::dcast(cohorts2011,Cohort~Age_by_Month,
+                                value.var="CustomerID",
+                                fun.aggregate = length)
+
+cw.retention <- cohorts.wide
+cw.churn <- cohorts.wide
+
+
+breaks <- quantile(cohorts.wide[,3:13], probs = seq(.05, .95, .05), na.rm = TRUE)
+colors <- sapply(round(seq(155, 80, length.out = length(breaks) + 1), 0),
+                 function(x){ rgb(x,x,155, maxColorValue = 155) } )
+
+library("tidyverse")
+
+install.packages("DT")
+library("DT")
+
+# The Retention Mixpanel with counts
+DT::datatable(cohorts.wide,
+              class = 'cell-border stripe',
+              rownames = FALSE,
+              options = list(
+                ordering=F,
+                dom = 't',
+                pageLength = 12) ) %>%
+  formatStyle("0",
+              backgroundColor = 'lightgrey',
+              fontWeight = 'bold') %>%
+  formatStyle(names(cohorts.wide[c(-1,-2)]),fontWeight = 'bold',color = 'white', backgroundColor = styleInterval(breaks,colors))
+
+
+Retention Rate Mixpanel
+
+for (i in rev(3:ncol(cw.retention))){
+  cw.retention[,i] <- round(cw.retention[,i]/cw.retention[,2],4)
+}
+rm(i)
+
+
+retention.avgs <- cw.retention
+
+retention.avgs[retention.avgs == 0.0000] <- NA
+avgs.ret <- round(apply(retention.avgs[,-1],2,mean, na.rm=TRUE),4)
+
+avgs.ret <- c(0,avgs.ret)
+
+cw.retention <- rbind(cw.retention,avgs.ret)
+
+breaks <- quantile(cw.retention[,3:13], probs = seq(.05, .95, .05), na.rm = TRUE)
+colors <- sapply(round(seq(155, 80, length.out = length(breaks) + 1), 0),
+                 function(x){ rgb(x,x,155, maxColorValue = 155) } )
+
+DT::datatable(cw.retention,
+              class = 'cell-border stripe',
+              rownames = FALSE,
+              options = list(
+                ordering=F,
+                dom = 't',
+                pageLength = 13) ) %>%
+  formatStyle("0",
+              backgroundColor = 'lightgrey',
+              fontWeight = 'bold') %>%
+  formatPercentage(c(3:13),2) %>% # We don't want column 0 in %
+  formatStyle("1", fontWeight = 'bold') %>%
+  formatStyle(names(cw.retention[c(-1,-2)]),color = 'white',fontWeight = 'bold', backgroundColor = styleInterval(breaks,colors))
+
+
+Churn Rate Mixpanel
+
+for (i in rev(3:ncol(cw.churn))){
+  
+
+  cw.churn[,i] <- round(cw.churn[,i]/cw.churn[,2],4)
+
+  cw.churn[,i] <- ifelse(cw.churn[,i] !=0, 1.0-cw.churn[,i], 0+cw.churn[,i])
+}
+rm(i)
+
+churn.avgs <- cw.churn
+
+
+churn.avgs[churn.avgs == 0.0000] <- NA
+avgs.chu <- round(apply(churn.avgs[,-1],2,mean, na.rm=TRUE),4)
+
+
+avgs.chu <- c(0,avgs.chu)
+
+
+cw.churn <- rbind(cw.churn,avgs.chu)
+
+
+
+breaks2 <- quantile(cw.churn[,3:13], probs = seq(.05, .95, .05), na.rm = TRUE)
+colors2 <- sapply(round(seq(255, 40, length.out = length(breaks2) + 1), 0),
+                  function(x){ rgb(255,x,x, maxColorValue = 255) } )
+
+DT::datatable(cw.churn,
+              class = 'cell-border stripe',
+              rownames = FALSE,
+              options = list(
+                ordering=F,
+                dom = 't',
+                pageLength = 13) ) %>%
+  formatStyle("0",
+              backgroundColor = 'lightgrey',
+              fontWeight = 'bold') %>%
+  formatPercentage(c(3:13),2) %>% # We don't want column 0 in %
+  formatStyle("1", fontWeight = 'bold') %>%
+  formatStyle(names(cw.churn[c(-1,-2)]),color = 'white',fontWeight = 'bold', backgroundColor = styleInterval(breaks2,colors2))
