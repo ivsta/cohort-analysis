@@ -250,6 +250,6 @@ DT::datatable(cw.churn,
   formatStyle("0",
               backgroundColor = 'lightgrey',
               fontWeight = 'bold') %>%
-  formatPercentage(c(3:13),2) %>% # We don't want column 0 in %
+  formatPercentage(c(3:13),2) %>% 
   formatStyle("1", fontWeight = 'bold') %>%
   formatStyle(names(cw.churn[c(-1,-2)]),color = 'white',fontWeight = 'bold', backgroundColor = styleInterval(breaks2,colors2))
